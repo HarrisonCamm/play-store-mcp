@@ -4,6 +4,7 @@ import com.google.api.client.googleapis.javanet.GoogleNetHttpTransport
 import com.google.api.client.http.FileContent
 import com.google.api.client.http.HttpRequestInitializer
 import com.google.api.client.json.gson.GsonFactory
+import com.google.api.client.googleapis.json.GoogleJsonResponseException
 import com.google.api.services.androidpublisher.AndroidPublisher
 import com.google.api.services.androidpublisher.AndroidPublisherScopes
 import com.google.api.services.androidpublisher.model.AppDetails
@@ -96,7 +97,7 @@ class PlayStoreClient(
             video?.let { listing.setVideo(it) }
 
             publisher.edits().listings().patch(packageName, editId, language, listing).execute()
-            publisher.edits().commit(packageName, editId).execute()
+            commitEditWithDraftFallback(packageName, editId)
 
             logger.info("Store listing updated for $packageName ($language)")
         } catch (e: Exception) {
@@ -129,7 +130,7 @@ class PlayStoreClient(
             contactWebsite?.let { details.setContactWebsite(it) }
 
             publisher.edits().details().patch(packageName, editId, details).execute()
-            publisher.edits().commit(packageName, editId).execute()
+            commitEditWithDraftFallback(packageName, editId)
 
             logger.info("App details updated for $packageName")
         } catch (e: Exception) {
@@ -167,7 +168,7 @@ class PlayStoreClient(
             val contentType = detectImageMimeType(imageFile)
             val content = FileContent(contentType, imageFile)
             publisher.edits().images().upload(packageName, editId, language, imageType, content).execute()
-            publisher.edits().commit(packageName, editId).execute()
+            commitEditWithDraftFallback(packageName, editId)
 
             logger.info("Image uploaded for $packageName ($language) [$imageType]")
         } catch (e: Exception) {
@@ -295,6 +296,81 @@ class PlayStoreClient(
     private fun parseSubscriptionJson(subscriptionJson: String): Subscription {
         val parser = GsonFactory.getDefaultInstance().createJsonParser(subscriptionJson)
         return parser.parseAndClose(Subscription::class.java)
+    }
+
+    private fun commitEditWithDraftFallback(packageName: String, editId: String) {
+        try {
+            publisher.edits().commit(packageName, editId).execute()
+            return
+        } catch (e: Exception) {
+            if (!isDraftReleaseOnlyError(e)) {
+                throw e
+            }
+            logger.warn(
+                "Commit failed due to draft app release status. " +
+                    "Attempting to convert existing releases to draft and retry."
+            )
+        }
+
+        forceDraftReleases(packageName, editId)
+        publisher.edits().commit(packageName, editId).execute()
+    }
+
+    private fun forceDraftReleases(packageName: String, editId: String) {
+        val trackList = publisher.edits().tracks().list(packageName, editId).execute()
+        trackList.tracks?.forEach { track ->
+            val trackName = track.track ?: return@forEach
+            val existingReleases = track.releases ?: return@forEach
+            if (existingReleases.isEmpty()) {
+                return@forEach
+            }
+
+            logger.info(
+                "Updating ${existingReleases.size} releases to draft for $packageName track $trackName"
+            )
+
+            val updatedReleases = existingReleases.map { release ->
+                TrackRelease()
+                    .setName(release.name)
+                    .setVersionCodes(release.versionCodes)
+                    .setReleaseNotes(release.releaseNotes)
+                    .setUserFraction(release.userFraction)
+                    .setCountryTargeting(release.countryTargeting)
+                    .setInAppUpdatePriority(release.inAppUpdatePriority)
+                    .setStatus("draft")
+            }
+
+            val updatedTrack = Track()
+                .setTrack(trackName)
+                .setReleases(updatedReleases)
+
+            publisher.edits().tracks().update(packageName, editId, trackName, updatedTrack).execute()
+        }
+    }
+
+    private fun isDraftReleaseOnlyError(error: Exception): Boolean {
+        val target = "Only releases with status draft may be created on draft app"
+        var current: Throwable? = error
+        while (current != null) {
+            val message = current.message
+            if (message?.contains(target, ignoreCase = true) == true) {
+                return true
+            }
+            if (current is GoogleJsonResponseException) {
+                val details = current.details
+                if (details?.message?.contains(target, ignoreCase = true) == true) {
+                    return true
+                }
+                val matched = details?.errors?.any { info ->
+                    info?.message?.contains(target, ignoreCase = true) == true
+                } ?: false
+                if (matched) {
+                    return true
+                }
+            }
+            current = current.cause
+        }
+        return false
     }
 
     private fun detectImageMimeType(file: File): String {
