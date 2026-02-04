@@ -6,7 +6,11 @@ import com.google.api.client.http.HttpRequestInitializer
 import com.google.api.client.json.gson.GsonFactory
 import com.google.api.services.androidpublisher.AndroidPublisher
 import com.google.api.services.androidpublisher.AndroidPublisherScopes
+import com.google.api.services.androidpublisher.model.AppDetails
 import com.google.api.services.androidpublisher.model.LocalizedText
+import com.google.api.services.androidpublisher.model.Listing
+import com.google.api.services.androidpublisher.model.SafetyLabelsUpdateRequest
+import com.google.api.services.androidpublisher.model.Subscription
 import com.google.api.services.androidpublisher.model.Track
 import com.google.api.services.androidpublisher.model.TrackRelease
 import com.google.auth.http.HttpCredentialsAdapter
@@ -69,6 +73,185 @@ class PlayStoreClient(
     }
 
     /**
+     * Update store listing details for a specific language.
+     */
+    fun updateStoreListing(
+        packageName: String,
+        language: String,
+        title: String?,
+        shortDescription: String?,
+        fullDescription: String?,
+        video: String?
+    ) {
+        logger.info("Updating store listing for $packageName ($language)")
+
+        val edit = publisher.edits().insert(packageName, null).execute()
+        val editId = edit.id
+
+        try {
+            val listing = Listing().setLanguage(language)
+            title?.let { listing.setTitle(it) }
+            shortDescription?.let { listing.setShortDescription(it) }
+            fullDescription?.let { listing.setFullDescription(it) }
+            video?.let { listing.setVideo(it) }
+
+            publisher.edits().listings().patch(packageName, editId, language, listing).execute()
+            publisher.edits().commit(packageName, editId).execute()
+
+            logger.info("Store listing updated for $packageName ($language)")
+        } catch (e: Exception) {
+            logger.error("Failed to update store listing for $packageName ($language)", e)
+            runCatching { publisher.edits().delete(packageName, editId).execute() }
+            throw PlayStoreException("Failed to update store listing: ${e.message}", e)
+        }
+    }
+
+    /**
+     * Update app details (contact info, default language).
+     */
+    fun updateAppDetails(
+        packageName: String,
+        defaultLanguage: String?,
+        contactEmail: String?,
+        contactPhone: String?,
+        contactWebsite: String?
+    ) {
+        logger.info("Updating app details for $packageName")
+
+        val edit = publisher.edits().insert(packageName, null).execute()
+        val editId = edit.id
+
+        try {
+            val details = AppDetails()
+            defaultLanguage?.let { details.setDefaultLanguage(it) }
+            contactEmail?.let { details.setContactEmail(it) }
+            contactPhone?.let { details.setContactPhone(it) }
+            contactWebsite?.let { details.setContactWebsite(it) }
+
+            publisher.edits().details().patch(packageName, editId, details).execute()
+            publisher.edits().commit(packageName, editId).execute()
+
+            logger.info("App details updated for $packageName")
+        } catch (e: Exception) {
+            logger.error("Failed to update app details for $packageName", e)
+            runCatching { publisher.edits().delete(packageName, editId).execute() }
+            throw PlayStoreException("Failed to update app details: ${e.message}", e)
+        }
+    }
+
+    /**
+     * Upload a store listing image (including screenshots).
+     */
+    fun uploadListingImage(
+        packageName: String,
+        language: String,
+        imageType: String,
+        imagePath: String,
+        clearExisting: Boolean
+    ) {
+        logger.info("Uploading $imageType for $packageName ($language)")
+
+        val imageFile = File(imagePath)
+        if (!imageFile.exists()) {
+            throw PlayStoreException("Image file not found: $imagePath")
+        }
+
+        val edit = publisher.edits().insert(packageName, null).execute()
+        val editId = edit.id
+
+        try {
+            if (clearExisting) {
+                publisher.edits().images().deleteall(packageName, editId, language, imageType).execute()
+            }
+
+            val contentType = detectImageMimeType(imageFile)
+            val content = FileContent(contentType, imageFile)
+            publisher.edits().images().upload(packageName, editId, language, imageType, content).execute()
+            publisher.edits().commit(packageName, editId).execute()
+
+            logger.info("Image uploaded for $packageName ($language) [$imageType]")
+        } catch (e: Exception) {
+            logger.error("Failed to upload image for $packageName ($language) [$imageType]", e)
+            runCatching { publisher.edits().delete(packageName, editId).execute() }
+            throw PlayStoreException("Failed to upload image: ${e.message}", e)
+        }
+    }
+
+    /**
+     * Update Data Safety labels (CSV content).
+     */
+    fun updateDataSafety(packageName: String, safetyLabelsCsv: String) {
+        logger.info("Updating data safety for $packageName")
+
+        try {
+            val request = SafetyLabelsUpdateRequest().setSafetyLabels(safetyLabelsCsv)
+            publisher.applications().dataSafety(packageName, request).execute()
+            logger.info("Data safety updated for $packageName")
+        } catch (e: Exception) {
+            logger.error("Failed to update data safety for $packageName", e)
+            throw PlayStoreException("Failed to update data safety: ${e.message}", e)
+        }
+    }
+
+    /**
+     * Create a new subscription.
+     */
+    fun createSubscription(
+        packageName: String,
+        productId: String,
+        regionsVersion: String?,
+        subscriptionJson: String
+    ): Subscription {
+        logger.info("Creating subscription $productId for $packageName")
+
+        try {
+            val subscription = parseSubscriptionJson(subscriptionJson)
+                .setPackageName(packageName)
+                .setProductId(productId)
+
+            val request = publisher.monetization().subscriptions().create(packageName, subscription)
+                .setProductId(productId)
+
+            regionsVersion?.let { request.setRegionsVersionVersion(it) }
+
+            return request.execute()
+        } catch (e: Exception) {
+            logger.error("Failed to create subscription $productId for $packageName", e)
+            throw PlayStoreException("Failed to create subscription: ${e.message}", e)
+        }
+    }
+
+    /**
+     * Patch an existing subscription.
+     */
+    fun updateSubscription(
+        packageName: String,
+        productId: String,
+        regionsVersion: String?,
+        subscriptionJson: String,
+        updateMask: String?,
+        allowMissing: Boolean?
+    ): Subscription {
+        logger.info("Updating subscription $productId for $packageName")
+
+        try {
+            val subscription = parseSubscriptionJson(subscriptionJson)
+                .setPackageName(packageName)
+                .setProductId(productId)
+
+            val request = publisher.monetization().subscriptions().patch(packageName, productId, subscription)
+            updateMask?.let { request.setUpdateMask(it) }
+            allowMissing?.let { request.setAllowMissing(it) }
+            regionsVersion?.let { request.setRegionsVersionVersion(it) }
+
+            return request.execute()
+        } catch (e: Exception) {
+            logger.error("Failed to update subscription $productId for $packageName", e)
+            throw PlayStoreException("Failed to update subscription: ${e.message}", e)
+        }
+    }
+
+    /**
      * Get release information for an app
      */
     fun getReleases(packageName: String): List<PlayStoreRelease> {
@@ -106,6 +289,20 @@ class PlayStoreClient(
         } catch (e: Exception) {
             logger.error("Failed to fetch releases for $packageName", e)
             throw PlayStoreException("Failed to fetch releases: ${e.message}", e)
+        }
+    }
+
+    private fun parseSubscriptionJson(subscriptionJson: String): Subscription {
+        val parser = GsonFactory.getDefaultInstance().createJsonParser(subscriptionJson)
+        return parser.parseAndClose(Subscription::class.java)
+    }
+
+    private fun detectImageMimeType(file: File): String {
+        return when (file.extension.lowercase()) {
+            "png" -> "image/png"
+            "jpg", "jpeg" -> "image/jpeg"
+            "webp" -> "image/webp"
+            else -> "application/octet-stream"
         }
     }
 

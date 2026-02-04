@@ -30,6 +30,16 @@ data class PlayStoreDeploymentResult(
 )
 
 /**
+ * Result of a non-deployment Play Store operation
+ */
+data class PlayStoreOperationResult(
+    val success: Boolean,
+    val message: String,
+    val details: Map<String, Any?> = emptyMap(),
+    val error: Throwable? = null
+)
+
+/**
  * Configuration for Play Store API client
  */
 data class PlayStoreConfig(

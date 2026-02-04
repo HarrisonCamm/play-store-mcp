@@ -14,6 +14,11 @@ This MCP server provides tools to:
 - Deploy new versions of Android applications
 - Promote releases between tracks (internal → alpha → beta → production)
 - Query the status of existing releases
+- Update store listings (title, descriptions, video)
+- Upload store listing images (including screenshots)
+- Update app details (contact info, default language)
+- Update Data Safety labels
+- Create and update subscriptions
 
 ## Available Tools
 
@@ -42,6 +47,67 @@ Gets the current status of app releases and deployments for a specific package.
 
 **Parameters:**
 - `packageName` (string): App package name (e.g., com.example.myapp)
+
+### 4. `update_store_listing`
+Updates localized store listing fields (title, short description, full description, video).
+
+**Parameters:**
+- `packageName` (string): App package name
+- `language` (string): BCP-47 language tag (e.g., en-US)
+- `title` (string, optional): Store listing title
+- `shortDescription` (string, optional): Short description
+- `fullDescription` (string, optional): Full description
+- `video` (string, optional): YouTube video URL
+
+### 5. `upload_listing_image`
+Uploads store listing images (including screenshots).
+
+**Parameters:**
+- `packageName` (string): App package name
+- `language` (string): BCP-47 language tag (e.g., en-US)
+- `imageType` (string): Image type (`phoneScreenshots`, `sevenInchScreenshots`, `tenInchScreenshots`, `tvScreenshots`, `wearScreenshots`, `icon`, `featureGraphic`, `promoGraphic`, `tvBanner`)
+- `imagePath` (string): Path to the image file (PNG/JPG/WEBP)
+- `clearExisting` (boolean, optional): Delete existing images for this type before upload
+
+### 6. `update_app_details`
+Updates app details (contact info, default language).
+
+**Parameters:**
+- `packageName` (string): App package name
+- `defaultLanguage` (string, optional): Default language (e.g., en-US)
+- `contactEmail` (string, optional): Contact email
+- `contactPhone` (string, optional): Contact phone
+- `contactWebsite` (string, optional): Contact website
+
+### 7. `set_data_safety`
+Updates Data Safety labels using a CSV payload.
+
+**Parameters:**
+- `packageName` (string): App package name
+- `safetyLabelsCsv` (string, optional): CSV content
+- `csvPath` (string, optional): Path to CSV file
+
+### 8. `create_subscription`
+Creates a subscription from a JSON payload.
+
+**Parameters:**
+- `packageName` (string): App package name
+- `productId` (string): Subscription product ID
+- `regionsVersion` (string): Regions version
+- `subscriptionJson` (string, optional): JSON payload
+- `subscriptionJsonPath` (string, optional): Path to JSON payload
+
+### 9. `update_subscription`
+Patches a subscription from a JSON payload.
+
+**Parameters:**
+- `packageName` (string): App package name
+- `productId` (string): Subscription product ID
+- `regionsVersion` (string): Regions version
+- `updateMask` (string): Comma-separated field mask
+- `allowMissing` (boolean, optional): Create subscription if missing
+- `subscriptionJson` (string, optional): JSON payload
+- `subscriptionJsonPath` (string, optional): Path to JSON payload
 
 ## Setup
 
@@ -156,6 +222,7 @@ To deploy with a gradual rollout (e.g., 50% of users):
 - Only supports APK and AAB files
 - Requires applications to be already configured in Play Console
 - Service account permissions must be configured manually in Play Console
+- Play Console API does not support updating content ratings or app categories; these must be managed in Play Console
 
 ## Troubleshooting
 

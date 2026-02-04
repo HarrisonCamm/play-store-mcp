@@ -93,5 +93,221 @@ class PlayStoreService(private val config: PlayStoreConfig) {
         playStoreClient.promoteRelease(packageName, fromTrack, toTrack, versionCode)
     }
 
+    /**
+     * Update store listing details.
+     */
+    suspend fun updateStoreListing(
+        packageName: String,
+        language: String,
+        title: String?,
+        shortDescription: String?,
+        fullDescription: String?,
+        video: String?
+    ): PlayStoreOperationResult = withContext(Dispatchers.IO) {
+        logger.info("Updating store listing for $packageName ($language)")
+
+        return@withContext try {
+            playStoreClient.updateStoreListing(packageName, language, title, shortDescription, fullDescription, video)
+            PlayStoreOperationResult(
+                success = true,
+                message = "Store listing updated for $packageName ($language)",
+                details = mapOf(
+                    "packageName" to packageName,
+                    "language" to language,
+                    "title" to title,
+                    "shortDescription" to shortDescription,
+                    "fullDescription" to fullDescription,
+                    "video" to video
+                )
+            )
+        } catch (e: Exception) {
+            PlayStoreOperationResult(
+                success = false,
+                message = "Store listing update failed: ${e.message}",
+                details = mapOf("packageName" to packageName, "language" to language),
+                error = e
+            )
+        }
+    }
+
+    /**
+     * Update app details (contact info, default language).
+     */
+    suspend fun updateAppDetails(
+        packageName: String,
+        defaultLanguage: String?,
+        contactEmail: String?,
+        contactPhone: String?,
+        contactWebsite: String?
+    ): PlayStoreOperationResult = withContext(Dispatchers.IO) {
+        logger.info("Updating app details for $packageName")
+
+        return@withContext try {
+            playStoreClient.updateAppDetails(packageName, defaultLanguage, contactEmail, contactPhone, contactWebsite)
+            PlayStoreOperationResult(
+                success = true,
+                message = "App details updated for $packageName",
+                details = mapOf(
+                    "packageName" to packageName,
+                    "defaultLanguage" to defaultLanguage,
+                    "contactEmail" to contactEmail,
+                    "contactPhone" to contactPhone,
+                    "contactWebsite" to contactWebsite
+                )
+            )
+        } catch (e: Exception) {
+            PlayStoreOperationResult(
+                success = false,
+                message = "App details update failed: ${e.message}",
+                details = mapOf("packageName" to packageName),
+                error = e
+            )
+        }
+    }
+
+    /**
+     * Upload a store listing image (including screenshots).
+     */
+    suspend fun uploadListingImage(
+        packageName: String,
+        language: String,
+        imageType: String,
+        imagePath: String,
+        clearExisting: Boolean
+    ): PlayStoreOperationResult = withContext(Dispatchers.IO) {
+        logger.info("Uploading image for $packageName ($language): $imageType")
+
+        return@withContext try {
+            playStoreClient.uploadListingImage(packageName, language, imageType, imagePath, clearExisting)
+            PlayStoreOperationResult(
+                success = true,
+                message = "Image uploaded for $packageName ($language) [$imageType]",
+                details = mapOf(
+                    "packageName" to packageName,
+                    "language" to language,
+                    "imageType" to imageType,
+                    "imagePath" to imagePath,
+                    "clearExisting" to clearExisting
+                )
+            )
+        } catch (e: Exception) {
+            PlayStoreOperationResult(
+                success = false,
+                message = "Image upload failed: ${e.message}",
+                details = mapOf(
+                    "packageName" to packageName,
+                    "language" to language,
+                    "imageType" to imageType
+                ),
+                error = e
+            )
+        }
+    }
+
+    /**
+     * Update data safety labels.
+     */
+    suspend fun updateDataSafety(
+        packageName: String,
+        safetyLabelsCsv: String
+    ): PlayStoreOperationResult = withContext(Dispatchers.IO) {
+        logger.info("Updating data safety for $packageName")
+
+        return@withContext try {
+            playStoreClient.updateDataSafety(packageName, safetyLabelsCsv)
+            PlayStoreOperationResult(
+                success = true,
+                message = "Data safety updated for $packageName",
+                details = mapOf("packageName" to packageName)
+            )
+        } catch (e: Exception) {
+            PlayStoreOperationResult(
+                success = false,
+                message = "Data safety update failed: ${e.message}",
+                details = mapOf("packageName" to packageName),
+                error = e
+            )
+        }
+    }
+
+    /**
+     * Create a subscription.
+     */
+    suspend fun createSubscription(
+        packageName: String,
+        productId: String,
+        regionsVersion: String?,
+        subscriptionJson: String
+    ): PlayStoreOperationResult = withContext(Dispatchers.IO) {
+        logger.info("Creating subscription $productId for $packageName")
+
+        return@withContext try {
+            val subscription = playStoreClient.createSubscription(
+                packageName,
+                productId,
+                regionsVersion,
+                subscriptionJson
+            )
+            PlayStoreOperationResult(
+                success = true,
+                message = "Subscription created for $packageName ($productId)",
+                details = mapOf(
+                    "packageName" to packageName,
+                    "productId" to productId,
+                    "basePlans" to (subscription.basePlans?.size ?: 0),
+                    "listings" to (subscription.listings?.mapNotNull { it.languageCode } ?: emptyList<String>())
+                )
+            )
+        } catch (e: Exception) {
+            PlayStoreOperationResult(
+                success = false,
+                message = "Subscription create failed: ${e.message}",
+                details = mapOf("packageName" to packageName, "productId" to productId),
+                error = e
+            )
+        }
+    }
+
+    /**
+     * Update a subscription.
+     */
+    suspend fun updateSubscription(
+        packageName: String,
+        productId: String,
+        regionsVersion: String?,
+        subscriptionJson: String,
+        updateMask: String?,
+        allowMissing: Boolean?
+    ): PlayStoreOperationResult = withContext(Dispatchers.IO) {
+        logger.info("Updating subscription $productId for $packageName")
+
+        return@withContext try {
+            val subscription = playStoreClient.updateSubscription(
+                packageName,
+                productId,
+                regionsVersion,
+                subscriptionJson,
+                updateMask,
+                allowMissing
+            )
+            PlayStoreOperationResult(
+                success = true,
+                message = "Subscription updated for $packageName ($productId)",
+                details = mapOf(
+                    "packageName" to packageName,
+                    "productId" to productId,
+                    "basePlans" to (subscription.basePlans?.size ?: 0),
+                    "listings" to (subscription.listings?.mapNotNull { it.languageCode } ?: emptyList<String>())
+                )
+            )
+        } catch (e: Exception) {
+            PlayStoreOperationResult(
+                success = false,
+                message = "Subscription update failed: ${e.message}",
+                details = mapOf("packageName" to packageName, "productId" to productId),
+                error = e
+            )
+        }
+    }
 
 }
